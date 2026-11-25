@@ -36,9 +36,8 @@ import java.time.ZoneId
  * Idempoten: tiap record punya clientRecordId tetap ("runsense-...") sehingga sinkron ulang
  * memperbarui record yang sama dan tidak menggandakannya.
  *
- * Sengaja TIDAK ditulis: detak jantung rata-rata sesi (hanya ada rata-rata, bukan sampel, dan
- * Health Connect menyimpan deret sampel) dan tidur (Intervals hanya memberi durasi, tanpa jam
- * tidur/bangun). Menulis angka karangan lebih buruk daripada tidak menulis.
+ * HR hanya ditulis dari sampel stream bertimestamp. Tidur hanya ditulis jika sumber menyediakan
+ * timestamp mulai dan selesai; sleepSecs saja tidak cukup untuk membuat sesi yang valid.
  */
 class HealthConnectWriter(private val context: Context) {
 
@@ -227,7 +226,7 @@ class HealthConnectWriter(private val context: Context) {
                 records += SleepSessionRecord(
                     startTime = sleepStart, startZoneOffset = zone.rules.getOffset(sleepStart),
                     endTime = sleepEnd, endZoneOffset = zone.rules.getOffset(sleepEnd),
-                    title = "Tidur", metadata = meta("runsense-sleep-$date")
+                    title = "Tidur", stages = emptyList(), metadata = meta("runsense-sleep-$date")
                 )
                 any = true
             }
