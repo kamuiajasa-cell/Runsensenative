@@ -218,9 +218,13 @@ class HealthConnectWriter(private val context: Context) {
                 }
                 return null
             }
-            val sleepStart = timestamp("sleepStartMs", "sleep_start_ms", "sleepStart", "sleep_start", "sleepStartTime", "sleep_start_time")
-            val sleepEnd = timestamp("sleepEndMs", "sleep_end_ms", "sleepEnd", "sleep_end", "sleepEndTime", "sleep_end_time")
-            if (sleepStart != null && sleepEnd != null && sleepEnd.isAfter(sleepStart) &&
+            val sourceSleepStart = timestamp("sleepStartMs", "sleep_start_ms", "sleepStart", "sleep_start", "sleepStartTime", "sleep_start_time")
+            val sourceSleepEnd = timestamp("sleepEndMs", "sleep_end_ms", "sleepEnd", "sleep_end", "sleepEndTime", "sleep_end_time")
+            val sleepSecs = w.optLong("sleepSecs", w.optLong("sleep_seconds", 0L))
+            // Jika hanya satu batas waktu tersedia, batas lainnya boleh diturunkan dari durasi tidur sumber.
+            val sleepStart = sourceSleepStart ?: sourceSleepEnd?.minusSeconds(sleepSecs.takeIf { it > 0 } ?: 0L)
+            val sleepEnd = sourceSleepEnd ?: sourceSleepStart?.plusSeconds(sleepSecs.takeIf { it > 0 } ?: 0L)
+            if (sleepStart != null && sleepEnd != null && sleepSecs > 0 && sleepEnd.isAfter(sleepStart) &&
                 java.time.Duration.between(sleepStart, sleepEnd).toHours() in 1..24 &&
                 can(SleepSessionRecord::class)) {
                 records += SleepSessionRecord(
