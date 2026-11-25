@@ -1,0 +1,6 @@
+<resources>
+    <color name="rs_bg">#0A0A0A</color>
+    <color name="rs_primary">#C6FF38</color>
+    <color name="ic_launcher_bg">#010F2B</color>
+    <color name="notif_accent">#4CAF1A</color>
+</resources>

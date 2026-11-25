@@ -1,0 +1,189 @@
+/* Shim RunSense Android: dipasang sebelum skrip aplikasi. Tidak mengubah kode aplikasi. */
+(function () {
+  "use strict";
+  var N = window.RunSenseNative;
+  if (!N || window.__rsShim) return;
+  window.__rsShim = true;
+
+  /* ---- fetch lewat Kotlin (tanpa CORS) untuk Intervals.icu dan Open-Meteo ---- */
+  var pending = {}, seq = 0;
+  var origFetch = window.fetch ? window.fetch.bind(window) : null;
+  var PROXY = /^https:\/\/(intervals\.icu|[a-z0-9-]+\.open-meteo\.com)\//i;
+
+  window.__rsHttp = function (id, ok, payload) {
+    var p = pending[id];
+    if (!p) return;
+    delete pending[id];
+    if (ok) {
+      try { p.res(JSON.parse(payload)); } catch (e) { p.rej(new TypeError("Respons tidak valid")); }
+    } else {
+      p.rej(new TypeError(payload || "Failed to fetch"));
+    }
+  };
+
+  function headersToObj(h) {
+    var o = {};
+    if (!h) return o;
+    if (typeof Headers !== "undefined" && h instanceof Headers) h.forEach(function (v, k) { o[k] = v; });
+    else if (Array.isArray(h)) h.forEach(function (p) { o[p[0]] = p[1]; });
+    else for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) o[k] = h[k];
+    return o;
+  }
+
+  window.fetch = function (input, init) {
+    var url = typeof input === "string" ? input : (input && input.url) || String(input);
+    if (!PROXY.test(url)) return origFetch ? origFetch(input, init) : Promise.reject(new TypeError("fetch tidak tersedia"));
+    init = init || {};
+    var method = String(init.method || (typeof input !== "string" && input.method) || "GET").toUpperCase();
+    var headers = headersToObj(init.headers || (typeof input !== "string" && input.headers));
+    var body = init.body == null ? null : String(init.body);
+    var signal = init.signal;
+    if (signal && signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+    return new Promise(function (res, rej) {
+      var id = ++seq;
+      pending[id] = {
+        res: function (r) {
+          var empty = r.status === 204 || r.status === 205 || r.status === 304;
+          res(new Response(empty ? null : r.body, { status: r.status, statusText: r.statusText || "", headers: r.headers }));
+        },
+        rej: rej
+      };
+      if (signal) signal.addEventListener("abort", function () {
+        if (pending[id]) { delete pending[id]; N.cancel(id); rej(new DOMException("Aborted", "AbortError")); }
+      });
+      N.http(id, JSON.stringify({ url: url, method: method, headers: headers, body: body }));
+    });
+  };
+
+  /* ---- Web Share & Clipboard ---- */
+  try {
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: function (d) { d = d || {}; N.share(String(d.title || ""), String(d.text || d.url || "")); return Promise.resolve(); }
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: function (t) { N.copy(String(t == null ? "" : t)); return Promise.resolve(); } }
+    });
+  } catch (e) {}
+
+  /* ---- Warna status bar mengikuti tema aplikasi ---- */
+  function pushTheme() {
+    N.setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+  }
+  try {
+    new MutationObserver(pushTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  } catch (e) {}
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", pushTheme); else pushTheme();
+
+  /* ---- Tombol kembali: tutup modal, lalu kembali ke tab Hari Ini, baru keluar ---- */
+  window.__rsBack = function () {
+    var m = document.querySelector(".modal-bg.show");
+    if (m) {
+      var btns = m.querySelectorAll("button"), closed = false;
+      for (var i = btns.length - 1; i >= 0; i--) {
+        if ((btns[i].textContent || "").trim() === "Tutup") { btns[i].click(); closed = true; break; }
+      }
+      if (!closed) m.classList.remove("show");
+      return true;
+    }
+    var nav = document.getElementById("bottomNav"), cur = document.querySelector(".screen.active");
+    if (nav && nav.style.display !== "none" && cur && cur.id !== "screen-home") {
+      var home = nav.querySelector('[data-screen="home"]');
+      if (home) { home.click(); return true; }
+    }
+    return false;
+  };
+
+  /* ---- Health Connect: tulis data Intervals.icu (hanya tulis) ---- */
+  var HC_KEY = "runsense_auto_v2", HC_AUTO = "rs_hc_auto", HC_SIG = "rs_hc_sig";
+  var hcBusy = false, hcTimer = null, hcLast = "";
+
+  function hcPayload() {
+    var raw; try { raw = localStorage.getItem(HC_KEY); } catch (e) { return null; }
+    if (!raw) return null;
+    var d; try { d = JSON.parse(raw); } catch (e) { return null; }
+    var cut = Date.now() - 120 * 864e5, cutDay = new Date(cut).toISOString().slice(0, 10);
+    var acts = (d.acts || []).filter(function (a) {
+      return a && (a[1] === "run" || a[1] === "walk") && a[0] >= cut && /^icu_/.test(String(a[6] || ""));
+    }).map(function (a) { return [a[0], a[1], a[2], a[3], a[5] || 0, String(a[6]), a[7] || ""]; });
+    var well = (d.wellness || []).filter(function (w) { return w && w.id && String(w.id) >= cutDay; })
+      .map(function (w) { return { id: String(w.id).slice(0, 10), restingHR: w.restingHR || 0, hrv: w.hrv || 0, steps: w.steps || 0, spO2: w.spO2 || 0 }; });
+    if (!acts.length && !well.length) return null;
+    return { acts: acts, wellness: well };
+  }
+  function hcSig(p) {
+    var lastA = p.acts.length ? p.acts[p.acts.length - 1][0] : 0;
+    var lastW = p.wellness.length ? JSON.stringify(p.wellness[p.wellness.length - 1]) : "";
+    return p.acts.length + "|" + lastA + "|" + p.wellness.length + "|" + lastW;
+  }
+  function hcSet(msg) { var e = document.getElementById("rsHcState"); if (e) e.textContent = msg; }
+  function hcSync(manual) {
+    if (hcBusy) return;
+    var p = hcPayload();
+    if (!p) { if (manual) hcSet("Belum ada data"); return; }
+    var sig = hcSig(p);
+    if (!manual) { try { if (localStorage.getItem(HC_SIG) === sig) return; } catch (e) {} }
+    hcBusy = true; hcLast = sig;
+    if (manual) hcSet("Menulis…");
+    N.hcWrite(JSON.stringify(p), !!manual);
+  }
+  window.__rsHcDone = function (ok, msg) {
+    hcBusy = false;
+    if (ok) { try { localStorage.setItem(HC_SIG, hcLast); } catch (e) {} }
+    hcSet(msg);
+  };
+  window.__rsHcInfo = function (json) {
+    var i; try { i = JSON.parse(json); } catch (e) { return; }
+    hcSet(i.state === "available" ? (i.granted ? "Siap" : "Belum diizinkan") : i.state === "update" ? "Perlu pembaruan" : "Tidak tersedia");
+  };
+  function hcAutoOn() { try { return localStorage.getItem(HC_AUTO) === "1"; } catch (e) { return false; } }
+
+  /* Tulis otomatis (bila dinyalakan) setelah data aplikasi disimpan; dirapatkan 8 detik. */
+  try {
+    var _set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      _set.apply(this, arguments);
+      if (k === HC_KEY && hcAutoOn()) {
+        clearTimeout(hcTimer);
+        hcTimer = setTimeout(function () { hcSync(false); }, 8000);
+      }
+    };
+  } catch (e) {}
+
+  function mountHc() {
+    var anchor = document.getElementById("meSync");
+    if (!anchor) return;
+    var group = anchor.closest(".sgroup"), actions = group && group.querySelector(".sactions");
+    if (!group || !actions) return;
+    var row = document.createElement("div");
+    row.className = "srow";
+    row.innerHTML = '<span class="sic n"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 000-7.8z"/></svg></span>' +
+      '<span class="srow-t">Health Connect<span class="srow-s">Tulis lari &amp; wellness dari Intervals.icu</span></span><b class="srow-v" id="rsHcState">—</b>';
+    group.insertBefore(row, actions);
+    function mk(label, fn) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "btn btn-outline sm"; b.textContent = label; b.onclick = fn;
+      actions.appendChild(b); return b;
+    }
+    mk("Tulis ke Health Connect", function () { hcSync(true); });
+    var auto = mk("", function () {
+      try { localStorage.setItem(HC_AUTO, hcAutoOn() ? "0" : "1"); } catch (e) {}
+      auto.textContent = "Otomatis: " + (hcAutoOn() ? "nyala" : "mati");
+    });
+    auto.textContent = "Otomatis: " + (hcAutoOn() ? "nyala" : "mati");
+    mk("Buka Health Connect", function () { N.hcOpen(); });
+    N.hcCheck();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountHc); else mountHc();
+
+  /* ---- Notifikasi: rsNotify/rsBadge milik halaman (service worker) diganti jalur native ---- */
+  try {
+    var nativeNotify = function (title, body) {
+      try { N.notify(String(title || "RunSense"), String(body || "")); return Promise.resolve(true); }
+      catch (e) { return Promise.resolve(false); }
+    };
+    Object.defineProperty(window, "rsNotify", { configurable: true, get: function () { return nativeNotify; }, set: function () {} });
+    Object.defineProperty(window, "rsBadge", { configurable: true, get: function () { return function () {}; }, set: function () {} });
+  } catch (e) {}
+})();
