@@ -41,7 +41,7 @@ import java.time.ZoneId
  */
 class HealthConnectWriter(private val context: Context) {
 
-    class Result(val sessions: Int, val days: Int)
+    class Result(val sessions: Int, val days: Int, val records: Int)
 
     companion object {
         private val TYPES = listOf(
@@ -310,6 +310,6 @@ class HealthConnectWriter(private val context: Context) {
 
         val hc = client()
         records.chunked(CHUNK).forEach { hc.insertRecords(it) }
-        return Result(sessions, days)
+        return Result(sessions, days, records.size)
     }
 }
