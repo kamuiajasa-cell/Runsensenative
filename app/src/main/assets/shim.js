@@ -232,8 +232,8 @@
     if (!group || !actions) return;
     var nav = document.getElementById("hcNav");
     if (nav) nav.hidden = false;
-    var row = document.createElement("div");
-    row.className = "srow";
+    // Gunakan placeholder dari HTML. Jangan membuat baris status kedua.
+    var row = anchor;
     row.innerHTML = '<span class="sic n"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 000-7.8z"/></svg></span>' +
       '<span class="srow-t">Health Connect<span class="srow-s">Tulis lari &amp; wellness dari Intervals.icu</span></span><b class="srow-v" id="rsHcState">—</b>';
     group.insertBefore(row, actions);
