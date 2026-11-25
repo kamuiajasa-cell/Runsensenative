@@ -103,7 +103,7 @@
     var raw; try { raw = localStorage.getItem(HC_KEY); } catch (e) { return null; }
     if (!raw) return null;
     var d; try { d = JSON.parse(raw); } catch (e) { return null; }
-    var cut = Date.now() - 120 * 864e5, cutDay = new Date(cut).toISOString().slice(0, 10);
+    var cut = Date.now() - 365 * 864e5, cutDay = new Date(cut).toISOString().slice(0, 10);
     var acts = (d.acts || []).filter(function (a) {
       return a && a[0] >= cut && /^icu_/.test(String(a[6] || "")) && Number(a[2]) > 0;
     }).map(function (a) {
@@ -135,9 +135,10 @@
     return { acts: acts, wellness: well };
   }
   function hcSig(p) {
-    var lastA = p.acts.length ? p.acts[p.acts.length - 1][0] : 0;
-    var lastW = p.wellness.length ? JSON.stringify(p.wellness[p.wellness.length - 1]) : "";
-    return p.acts.length + "|" + lastA + "|" + p.wellness.length + "|" + lastW;
+    // Hash seluruh payload agar perubahan data historis ikut memicu sinkron ulang.
+    var s = JSON.stringify(p), h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(16) + "|" + s.length;
   }
   function hcSet(msg) { var e = document.getElementById("rsHcState"); if (e) e.textContent = msg; }
   function hcSync(manual) {
