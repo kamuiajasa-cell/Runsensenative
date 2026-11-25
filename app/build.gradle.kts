@@ -13,8 +13,8 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
-        // URL web RunSense milikmu (https). Kosong = pakai versi yang dibundel di APK.
-        val remote = (project.findProperty("runsenseUrl") as String? ?: "").trim()
+        // URL utama RunSense. Bisa dioverride lewat -PrunsenseUrl=...; HTML bundel hanya fallback offline.
+        val remote = (project.findProperty("runsenseUrl") as String? ?: "https://kamuiajasa-cell.github.io/runsense/runsense.html").trim()
         buildConfigField("String", "REMOTE_URL", "\"$remote\"")
     }
     buildFeatures { buildConfig = true }
