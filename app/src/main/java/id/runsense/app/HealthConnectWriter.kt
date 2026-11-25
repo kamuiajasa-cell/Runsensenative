@@ -3,6 +3,8 @@ package id.runsense.app
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ElevationGainedRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
@@ -11,8 +13,12 @@ import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Length
+import androidx.health.connect.client.units.Mass
+import androidx.health.connect.client.units.Pressure
 import androidx.health.connect.client.units.Percentage
 import org.json.JSONObject
 import java.time.Instant
@@ -42,7 +48,11 @@ class HealthConnectWriter(private val context: Context) {
             StepsRecord::class,
             RestingHeartRateRecord::class,
             HeartRateVariabilityRmssdRecord::class,
-            OxygenSaturationRecord::class
+            OxygenSaturationRecord::class,
+            WeightRecord::class,
+            BodyFatRecord::class,
+            BloodPressureRecord::class,
+            Vo2MaxRecord::class
         )
         val PERMISSIONS: Set<String> = TYPES.map { HealthPermission.getWritePermission(it) }.toSet()
         private const val CHUNK = 500
@@ -88,15 +98,26 @@ class HealthConnectWriter(private val context: Context) {
             val so = zone.rules.getOffset(start)
             val eo = zone.rules.getOffset(end)
             val key = "runsense-$lid"
+            val exerciseType = when (kind.lowercase()) {
+                "run", "running" -> ExerciseSessionRecord.EXERCISE_TYPE_RUNNING
+                "walk", "walking" -> ExerciseSessionRecord.EXERCISE_TYPE_WALKING
+                "ride", "cycling", "bike" -> ExerciseSessionRecord.EXERCISE_TYPE_BIKING
+                "swim", "swimming" -> ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING
+                "hike", "hiking" -> ExerciseSessionRecord.EXERCISE_TYPE_HIKING
+                "rowing", "row" -> ExerciseSessionRecord.EXERCISE_TYPE_ROWING
+                "elliptical" -> ExerciseSessionRecord.EXERCISE_TYPE_ELLIPTICAL
+                "strength", "weight_training" -> ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING
+                "jump_rope", "jumprope", "rope_skipping" -> ExerciseSessionRecord.EXERCISE_TYPE_JUMP_ROPE
+                else -> ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT
+            }
 
             if (can(ExerciseSessionRecord::class)) {
                 records += ExerciseSessionRecord(
                     startTime = start, startZoneOffset = so,
                     endTime = end, endZoneOffset = eo,
                     metadata = meta(key),
-                    exerciseType = if (kind == "walk") ExerciseSessionRecord.EXERCISE_TYPE_WALKING
-                    else ExerciseSessionRecord.EXERCISE_TYPE_RUNNING,
-                    title = name.ifBlank { if (kind == "walk") "Jalan" else "Lari" }
+                    exerciseType = exerciseType,
+                    title = name.ifBlank { kind.replaceFirstChar { it.uppercase() } }
                 )
                 sessions++
             }
@@ -160,6 +181,27 @@ class HealthConnectWriter(private val context: Context) {
                     time = at, zoneOffset = off,
                     percentage = Percentage(spo2), metadata = meta("runsense-spo2-$date")
                 )
+                any = true
+            }
+            val weight = w.optDouble("weight", 0.0)
+            if (weight in 20.0..350.0 && can(WeightRecord::class)) {
+                records += WeightRecord(time = at, zoneOffset = off, weight = Mass.kilograms(weight), metadata = meta("runsense-weight-$date"))
+                any = true
+            }
+            val bodyFat = w.optDouble("bodyFat", 0.0)
+            if (bodyFat in 2.0..75.0 && can(BodyFatRecord::class)) {
+                records += BodyFatRecord(time = at, zoneOffset = off, percentage = Percentage(bodyFat), metadata = meta("runsense-bodyfat-$date"))
+                any = true
+            }
+            val systolic = w.optDouble("systolic", 0.0)
+            val diastolic = w.optDouble("diastolic", 0.0)
+            if (systolic in 60.0..280.0 && diastolic in 30.0..180.0 && systolic > diastolic && can(BloodPressureRecord::class)) {
+                records += BloodPressureRecord(time = at, zoneOffset = off, systolic = Pressure.millimetersOfMercury(systolic), diastolic = Pressure.millimetersOfMercury(diastolic), metadata = meta("runsense-bp-$date"))
+                any = true
+            }
+            val vo2 = w.optDouble("vo2max", w.optDouble("vo2Max", 0.0))
+            if (vo2 in 10.0..100.0 && can(Vo2MaxRecord::class)) {
+                records += Vo2MaxRecord(time = at, zoneOffset = off, vo2MillilitersPerMinuteKilogram = vo2, measurementMethod = Vo2MaxRecord.MEASUREMENT_METHOD_OTHER, metadata = meta("runsense-vo2max-$date"))
                 any = true
             }
             if (any) days++
