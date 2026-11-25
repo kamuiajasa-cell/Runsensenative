@@ -1,0 +1,61 @@
+name: Build RunSense Android
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'RunSense-Android (1).zip'
+      - '.github/workflows/android-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Android project
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile("RunSense-Android (1).zip") as z:
+              bad = z.testzip()
+              if bad:
+                  raise SystemExit(f"ZIP rusak: {bad}")
+              z.extractall("workspace")
+          PY
+          test -f "workspace/RunSense-Android/app/build.gradle.kts"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build debug APK
+        working-directory: workspace/RunSense-Android
+        run: gradle assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: runsense-debug-apk
+          path: workspace/RunSense-Android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
