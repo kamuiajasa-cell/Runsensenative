@@ -105,10 +105,32 @@
     var d; try { d = JSON.parse(raw); } catch (e) { return null; }
     var cut = Date.now() - 120 * 864e5, cutDay = new Date(cut).toISOString().slice(0, 10);
     var acts = (d.acts || []).filter(function (a) {
-      return a && (a[1] === "run" || a[1] === "walk") && a[0] >= cut && /^icu_/.test(String(a[6] || ""));
-    }).map(function (a) { return [a[0], a[1], a[2], a[3], a[5] || 0, String(a[6]), a[7] || ""]; });
+      return a && a[0] >= cut && /^icu_/.test(String(a[6] || "")) && Number(a[2]) > 0;
+    }).map(function (a) {
+      // [start,kind,min,km,avgHR,elev,lid,name,maxHR,icuId,load,cadence]
+      return [a[0], String(a[1] || "other"), a[2], a[3], a[5] || 0, String(a[6]), a[7] || ""];
+    });
     var well = (d.wellness || []).filter(function (w) { return w && w.id && String(w.id) >= cutDay; })
-      .map(function (w) { return { id: String(w.id).slice(0, 10), restingHR: w.restingHR || 0, hrv: w.hrv || 0, steps: w.steps || 0, spO2: w.spO2 || 0 }; });
+      .map(function (w) {
+        var x = Object.assign({}, w, { id: String(w.id).slice(0, 10) });
+        function pick() {
+          for (var i = 0; i < arguments.length; i++) {
+            var v = x[arguments[i]];
+            if (v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v))) return Number(v);
+          }
+          return 0;
+        }
+        x.restingHR = pick("restingHR", "resting_hr");
+        x.hrv = pick("hrv");
+        x.steps = pick("steps", "Steps", "totalSteps", "stepCount");
+        x.spO2 = pick("spO2", "spo2");
+        x.weight = pick("weight", "weightKg");
+        x.bodyFat = pick("bodyFat", "body_fat");
+        x.systolic = pick("systolic", "systolicBP", "systolic_bp");
+        x.diastolic = pick("diastolic", "diastolicBP", "diastolic_bp");
+        x.vo2max = pick("vo2max", "vo2Max", "vo2_max");
+        return x;
+      });
     if (!acts.length && !well.length) return null;
     return { acts: acts, wellness: well };
   }
