@@ -171,14 +171,23 @@ class NativeBridge(
                     "update" -> return@launch hcDone(false, "Perbarui Health Connect lewat Play Store dulu.")
                     "unavailable" -> return@launch hcDone(false, "Health Connect tidak tersedia di perangkat ini.")
                 }
-                if (!info.getBoolean("granted")) {
-                    if (!interactive) return@launch hcDone(false, "Izin Health Connect belum diberikan.")
-                    val granted = activity.requestHcPermissions()
-                    if (granted.none { it in HealthConnectWriter.PERMISSIONS })
-                        return@launch hcDone(false, "Izin ditolak. Tidak ada yang ditulis.")
+                var current = hc.grantedPermissions()
+                if (current.isEmpty()) {
+                    if (!interactive) return@launch hcDone(false, "Belum ada izin tulis. Tekan tombol Tulis dan aktifkan izin di layar Health Connect.")
+                    // Hasil launcher dapat hanya berisi izin yang baru berubah. Selalu baca ulang
+                    // izin aktual dari provider sebelum memutuskan apakah penulisan boleh berjalan.
+                    activity.requestHcPermissions()
+                    current = hc.grantedPermissions()
+                }
+                if (current.isEmpty()) {
+                    return@launch hcDone(false, "Belum ada izin tulis yang aktif. Buka Health Connect > Izin aplikasi > RunSense, lalu aktifkan jenis data yang diperlukan.")
                 }
                 val r = hc.write(JSONObject(json))
-                hcDone(true, "${r.sessions} sesi dan ${r.days} hari data ditulis · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()))
+                if (r.records == 0) {
+                    val count = current.size
+                    return@launch hcDone(false, "Izin aktif $count jenis, tetapi tidak ada record yang cocok untuk ditulis. Periksa data Intervals.icu.")
+                }
+                hcDone(true, "${r.records} record · ${r.sessions} sesi · ${r.days} hari data ditulis · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()))
             } catch (e: Exception) {
                 hcDone(false, "Gagal menulis: ${e.message ?: e.javaClass.simpleName}")
             }
@@ -208,9 +217,11 @@ class NativeBridge(
             HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> "update"
             else -> "unavailable"
         }
-        val granted = state == "available" &&
-            runCatching { hc.grantedPermissions().containsAll(HealthConnectWriter.PERMISSIONS) }.getOrDefault(false)
+        val grantedCount = if (state == "available") runCatching { hc.grantedPermissions().size }.getOrDefault(0) else 0
+        val granted = grantedCount > 0
         return JSONObject().put("state", state).put("granted", granted)
+            .put("grantedCount", grantedCount)
+            .put("requiredCount", HealthConnectWriter.PERMISSIONS.size)
     }
 
     private fun hcDone(ok: Boolean, msg: String) =
