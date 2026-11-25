@@ -161,16 +161,26 @@
         var h = d.hx && d.hx[String(a[9])];
         return h && Number(h.activitySteps) > 0 && Number(h.cadenceCoverageSec) >= Math.min(180, Number(a[2]) * 60 * .35);
       });
-      if (!complete) return;
-      var stepsInActivities = rows.reduce(function (n, a) { return n + Number(d.hx[String(a[9])].activitySteps || 0); }, 0);
-      var exactActivityMeters = (d.acts || []).filter(function (a) {
-        if (!a || !a[9]) return false;
-        var dt = new Date(Number(a[0]));
-        var key = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
-        return key === day;
-      }).reduce(function (n, a) { return n + Math.max(0, Number(a[3]) || 0) * 1000; }, 0);
-      var meters = exactActivityMeters + Math.max(0, Number(w.steps) - stepsInActivities) * stride;
-      if (meters > 0) dailyDistance.push({ date: day, distanceMeters: Math.round(meters), method: "activity_distance_plus_residual_steps_x_personal_walk_stride" });
+      var meters = 0, method = "";
+      if (complete) {
+        // Jika langkah dalam semua sesi lokomosi diketahui, gunakan jarak sesi aktual
+        // lalu tambahkan langkah harian di luar sesi dengan panjang langkah personal.
+        var stepsInActivities = rows.reduce(function (n, a) { return n + Number(d.hx[String(a[9])].activitySteps || 0); }, 0);
+        var exactActivityMeters = (d.acts || []).filter(function (a) {
+          if (!a || !a[9]) return false;
+          var dt = new Date(Number(a[0]));
+          var key = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+          return key === day;
+        }).reduce(function (n, a) { return n + Math.max(0, Number(a[3]) || 0) * 1000; }, 0);
+        meters = exactActivityMeters + Math.max(0, Number(w.steps) - stepsInActivities) * stride;
+        method = "actual_activity_distance_plus_residual_steps_x_personal_walk_stride";
+      } else {
+        // Fallback: seluruh langkah harian dikonversi memakai stride pribadi terkalibrasi.
+        // Ini estimasi; tidak dicampur dengan jarak sesi agar tidak menggandakan jarak.
+        meters = Number(w.steps) * stride;
+        method = "daily_steps_x_personal_calibrated_stride_estimate";
+      }
+      if (meters > 0 && meters <= 100000) dailyDistance.push({ date: day, distanceMeters: Math.round(meters), method: method, estimated: !complete });
     });
     if (!acts.length && !well.length) return null;
     return { acts: acts, wellness: well, activityStreams: activityStreams, dailyDistance: dailyDistance };
