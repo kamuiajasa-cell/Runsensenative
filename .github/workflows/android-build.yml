@@ -3,9 +3,6 @@ name: Build RunSense Android
 on:
   push:
     branches: [main]
-    paths:
-      - 'RunSense-Android (1).zip'
-      - '.github/workflows/android-build.yml'
   workflow_dispatch:
 
 permissions:
