@@ -3,6 +3,7 @@ package id.runsense.app
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.DistanceRecord
@@ -16,6 +17,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Length
 import androidx.health.connect.client.units.Mass
 import androidx.health.connect.client.units.Pressure
@@ -44,6 +46,7 @@ class HealthConnectWriter(private val context: Context) {
         private val TYPES = listOf(
             ExerciseSessionRecord::class,
             DistanceRecord::class,
+            ActiveCaloriesBurnedRecord::class,
             ElevationGainedRecord::class,
             StepsRecord::class,
             RestingHeartRateRecord::class,
@@ -127,6 +130,15 @@ class HealthConnectWriter(private val context: Context) {
                     endTime = end, endZoneOffset = eo,
                     distance = Length.meters(km * 1000.0),
                     metadata = meta("$key-dist")
+                )
+            }
+            val kcal = a.optDouble(8, 0.0)
+            if (kcal > 0 && kcal < 5000 && can(ActiveCaloriesBurnedRecord::class)) {
+                records += ActiveCaloriesBurnedRecord(
+                    startTime = start, startZoneOffset = so,
+                    endTime = end, endZoneOffset = eo,
+                    energy = Energy.kilocalories(kcal),
+                    metadata = meta("$key-active-kcal")
                 )
             }
             if (elev > 0 && can(ElevationGainedRecord::class)) {
