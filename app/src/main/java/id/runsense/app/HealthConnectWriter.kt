@@ -9,10 +9,12 @@ import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ElevationGainedRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
@@ -47,6 +49,8 @@ class HealthConnectWriter(private val context: Context) {
             ExerciseSessionRecord::class,
             DistanceRecord::class,
             ActiveCaloriesBurnedRecord::class,
+            HeartRateRecord::class,
+            SleepSessionRecord::class,
             ElevationGainedRecord::class,
             StepsRecord::class,
             RestingHeartRateRecord::class,
@@ -81,6 +85,13 @@ class HealthConnectWriter(private val context: Context) {
         )
 
         val records = ArrayList<Record>()
+        val derivedDaily = payload.optJSONArray("dailyDistance")
+        val derivedDays = mutableSetOf<String>()
+        if (derivedDaily != null) for (i in 0 until derivedDaily.length()) {
+            val d = derivedDaily.optJSONObject(i) ?: continue
+            val date = d.optString("date")
+            if (date.isNotBlank() && d.optDouble("distanceMeters", 0.0) > 0) derivedDays.add(date)
+        }
         var sessions = 0
         var days = 0
 
@@ -124,7 +135,7 @@ class HealthConnectWriter(private val context: Context) {
                 )
                 sessions++
             }
-            if (km > 0 && can(DistanceRecord::class)) {
+            if (km > 0 && start.atZone(zone).toLocalDate().toString() !in derivedDays && can(DistanceRecord::class)) {
                 records += DistanceRecord(
                     startTime = start, startZoneOffset = so,
                     endTime = end, endZoneOffset = eo,
@@ -151,6 +162,33 @@ class HealthConnectWriter(private val context: Context) {
             }
         }
 
+        // Rekaman HR asli dari stream Intervals (timestamp dan bpm, bukan HR rata-rata buatan).
+        val streams = payload.optJSONArray("activityStreams")
+        if (streams != null && can(HeartRateRecord::class)) for (i in 0 until streams.length()) {
+            val item = streams.optJSONObject(i) ?: continue
+            val id = item.optString("id")
+            val samplesJson = item.optJSONArray("hrSamples") ?: continue
+            val samples = ArrayList<HeartRateRecord.Sample>()
+            for (j in 0 until samplesJson.length()) {
+                val p = samplesJson.optJSONObject(j) ?: continue
+                val t = p.optLong("t", 0L)
+                val bpm = p.optDouble("hr", 0.0)
+                if (t > 0 && bpm in 40.0..240.0) samples.add(HeartRateRecord.Sample(
+                    time = Instant.ofEpochMilli(t), beatsPerMinute = bpm.toLong()
+                ))
+            }
+            val clean = samples.distinctBy { it.time }.sortedBy { it.time }
+            if (clean.size >= 2) {
+                val start = clean.first().time
+                val end = clean.last().time
+                records += HeartRateRecord(
+                    startTime = start, startZoneOffset = zone.rules.getOffset(start),
+                    endTime = end, endZoneOffset = zone.rules.getOffset(end),
+                    samples = clean, metadata = meta("runsense-${id}-hr")
+                )
+            }
+        }
+
         val well = payload.optJSONArray("wellness")
         if (well != null) for (i in 0 until well.length()) {
             val w = well.getJSONObject(i)
@@ -161,6 +199,38 @@ class HealthConnectWriter(private val context: Context) {
             val at = date.atTime(LocalTime.of(6, 0)).atZone(zone).toInstant()
             val off = zone.rules.getOffset(at)
             var any = false
+
+            // Tidur hanya ditulis jika sumber benar-benar memberi timestamp mulai dan selesai.
+            fun timestamp(vararg keys: String): Instant? {
+                for (key in keys) {
+                    val value = w.opt(key) ?: continue
+                    if (value == JSONObject.NULL) continue
+                    val text = value.toString().trim()
+                    if (text.isEmpty() || text == "0") continue
+                    val numeric = text.toDoubleOrNull()
+                    if (numeric != null && numeric > 0) {
+                        val millis = if (numeric > 10_000_000_000.0) numeric.toLong() else (numeric * 1000.0).toLong()
+                        return runCatching { Instant.ofEpochMilli(millis) }.getOrNull()
+                    }
+                    val parsed = runCatching { Instant.parse(text) }.getOrNull()
+                        ?: runCatching { java.time.OffsetDateTime.parse(text).toInstant() }.getOrNull()
+                        ?: runCatching { java.time.LocalDateTime.parse(text).atZone(zone).toInstant() }.getOrNull()
+                    if (parsed != null) return parsed
+                }
+                return null
+            }
+            val sleepStart = timestamp("sleepStartMs", "sleep_start_ms", "sleepStart", "sleep_start", "sleepStartTime", "sleep_start_time")
+            val sleepEnd = timestamp("sleepEndMs", "sleep_end_ms", "sleepEnd", "sleep_end", "sleepEndTime", "sleep_end_time")
+            if (sleepStart != null && sleepEnd != null && sleepEnd.isAfter(sleepStart) &&
+                java.time.Duration.between(sleepStart, sleepEnd).toHours() in 1..24 &&
+                can(SleepSessionRecord::class)) {
+                records += SleepSessionRecord(
+                    startTime = sleepStart, startZoneOffset = zone.rules.getOffset(sleepStart),
+                    endTime = sleepEnd, endZoneOffset = zone.rules.getOffset(sleepEnd),
+                    title = "Tidur", metadata = meta("runsense-sleep-$date")
+                )
+                any = true
+            }
 
             val steps = w.optLong("steps", 0)
             if (steps > 0 && can(StepsRecord::class)) {
@@ -217,6 +287,22 @@ class HealthConnectWriter(private val context: Context) {
                 any = true
             }
             if (any) days++
+        }
+
+        // Jarak harian hasil olahan: jarak sesi aktual + sisa langkah x panjang langkah personal.
+        if (derivedDaily != null && can(DistanceRecord::class)) for (i in 0 until derivedDaily.length()) {
+            val d = derivedDaily.optJSONObject(i) ?: continue
+            val date = runCatching { LocalDate.parse(d.getString("date")) }.getOrNull() ?: continue
+            val meters = d.optDouble("distanceMeters", 0.0)
+            if (meters <= 0 || meters > 150_000) continue
+            val start = date.atStartOfDay(zone).toInstant()
+            val end = date.plusDays(1).atStartOfDay(zone).toInstant().minusSeconds(1)
+            records += DistanceRecord(
+                startTime = start, startZoneOffset = zone.rules.getOffset(start),
+                endTime = end, endZoneOffset = zone.rules.getOffset(end),
+                distance = Length.meters(meters),
+                metadata = meta("runsense-derived-distance-$date")
+            )
         }
 
         val hc = client()
