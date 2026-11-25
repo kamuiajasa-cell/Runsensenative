@@ -108,7 +108,7 @@
       return a && a[0] >= cut && /^icu_/.test(String(a[6] || "")) && Number(a[2]) > 0;
     }).map(function (a) {
       // [start,kind,min,km,avgHR,elev,lid,name,maxHR,icuId,load,cadence]
-      return [a[0], String(a[1] || "other"), a[2], a[3], a[5] || 0, String(a[6]), a[7] || "", String(a[12] || a[1] || "other")];
+      return [a[0], String(a[1] || "other"), a[2], a[3], a[5] || 0, String(a[6]), a[7] || "", String(a[12] || a[1] || "other"), Number(a[13] || 0)];
     });
     var well = (d.wellness || []).filter(function (w) { return w && w.id && String(w.id) >= cutDay; })
       .map(function (w) {
