@@ -226,10 +226,12 @@
   } catch (e) {}
 
   function mountHc() {
-    var anchor = document.getElementById("meSync");
+    var anchor = document.getElementById("rsHcMount");
     if (!anchor) return;
-    var group = anchor.closest(".sgroup"), actions = group && group.querySelector(".sactions");
+    var group = anchor.closest(".sgroup"), actions = document.getElementById("rsHcActions");
     if (!group || !actions) return;
+    var nav = document.getElementById("hcNav");
+    if (nav) nav.hidden = false;
     var row = document.createElement("div");
     row.className = "srow";
     row.innerHTML = '<span class="sic n"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 000-7.8z"/></svg></span>' +
