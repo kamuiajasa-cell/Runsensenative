@@ -102,12 +102,12 @@ class HealthConnectWriter(private val context: Context) {
                 "run", "running" -> ExerciseSessionRecord.EXERCISE_TYPE_RUNNING
                 "walk", "walking" -> ExerciseSessionRecord.EXERCISE_TYPE_WALKING
                 "ride", "cycling", "bike" -> ExerciseSessionRecord.EXERCISE_TYPE_BIKING
-                "swim", "swimming" -> ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING
+                "swim", "swimming" -> ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL
                 "hike", "hiking" -> ExerciseSessionRecord.EXERCISE_TYPE_HIKING
                 "rowing", "row" -> ExerciseSessionRecord.EXERCISE_TYPE_ROWING
                 "elliptical" -> ExerciseSessionRecord.EXERCISE_TYPE_ELLIPTICAL
                 "strength", "weight_training" -> ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING
-                "jump_rope", "jumprope", "rope_skipping" -> ExerciseSessionRecord.EXERCISE_TYPE_JUMP_ROPE
+                "jump_rope", "jumprope", "rope_skipping" -> ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT
                 else -> ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT
             }
 
