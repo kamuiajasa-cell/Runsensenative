@@ -47,7 +47,9 @@ jobs:
             exit 1
           fi
           echo "Using SDK manager: $SDKMANAGER"
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses
+          set +o pipefail
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses || true
+          set -o pipefail
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle 8.11.1
