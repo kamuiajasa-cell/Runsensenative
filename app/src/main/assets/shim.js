@@ -131,8 +131,49 @@
         x.vo2max = pick("vo2max", "vo2Max", "vo2_max");
         return x;
       });
+    var activityStreams = [];
+    var actById = {};
+    (d.acts || []).forEach(function (a) {
+      if (!a || !a[9]) return;
+      var id = String(a[9]), h = d.hx && d.hx[id];
+      if (!h || !Array.isArray(h.hrSamples) || !h.hrSamples.length) return;
+      activityStreams.push({
+        id: id, startMs: Number(a[0]) || 0,
+        hrSamples: h.hrSamples.filter(function (p) { return p && Number(p.t) > 0 && Number(p.hr) > 40 && Number(p.hr) < 240; }),
+        zoneSeconds: Array.isArray(h.zoneSeconds) ? h.zoneSeconds : null,
+        hrCoverageSec: Number(h.hrCoverageSec) || 0
+      });
+      actById[id] = a;
+    });
+    var strideRows = Object.keys(d.hx || {}).map(function (id) { return Number(d.hx[id] && d.hx[id].walkStrideM); })
+      .filter(function (v) { return v >= .35 && v <= 1.15; }).sort(function (a, b) { return a - b; });
+    var stride = strideRows.length ? strideRows[Math.floor(strideRows.length / 2)] : 0;
+    var dailyDistance = [];
+    well.forEach(function (w) {
+      if (!(w.steps > 0) || !stride) return;
+      var day = String(w.id).slice(0, 10), rows = (d.acts || []).filter(function (a) {
+        if (!a || !a[9]) return false;
+        var dt = new Date(Number(a[0]));
+        var key = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+        return key === day && /run|walk|hike/i.test(String(a[12] || a[1] || ""));
+      });
+      var complete = rows.length > 0 && rows.every(function (a) {
+        var h = d.hx && d.hx[String(a[9])];
+        return h && Number(h.activitySteps) > 0 && Number(h.cadenceCoverageSec) >= Math.min(180, Number(a[2]) * 60 * .35);
+      });
+      if (!complete) return;
+      var stepsInActivities = rows.reduce(function (n, a) { return n + Number(d.hx[String(a[9])].activitySteps || 0); }, 0);
+      var exactActivityMeters = (d.acts || []).filter(function (a) {
+        if (!a || !a[9]) return false;
+        var dt = new Date(Number(a[0]));
+        var key = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+        return key === day;
+      }).reduce(function (n, a) { return n + Math.max(0, Number(a[3]) || 0) * 1000; }, 0);
+      var meters = exactActivityMeters + Math.max(0, Number(w.steps) - stepsInActivities) * stride;
+      if (meters > 0) dailyDistance.push({ date: day, distanceMeters: Math.round(meters), method: "activity_distance_plus_residual_steps_x_personal_walk_stride" });
+    });
     if (!acts.length && !well.length) return null;
-    return { acts: acts, wellness: well };
+    return { acts: acts, wellness: well, activityStreams: activityStreams, dailyDistance: dailyDistance };
   }
   function hcSig(p) {
     // Hash seluruh payload agar perubahan data historis ikut memicu sinkron ulang.
