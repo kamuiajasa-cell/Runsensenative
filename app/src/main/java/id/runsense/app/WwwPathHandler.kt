@@ -6,7 +6,7 @@ import androidx.webkit.WebViewAssetLoader
 import java.io.ByteArrayInputStream
 import java.io.IOException
 
-/** Menyajikan assets/www/*. index.html disisipi shim.js tepat setelah <head>. */
+/** Menyajikan aset web dari folder www; shim.js disisipkan setelah tag head. */
 class WwwPathHandler(
     private val context: Context,
     private val shim: String
