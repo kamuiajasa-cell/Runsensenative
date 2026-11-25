@@ -91,6 +91,7 @@ class HealthConnectWriter(private val context: Context) {
             val elev = a.optDouble(4, 0.0)
             val lid = a.getString(5)
             val name = a.optString(6, "")
+            val sourceType = a.optString(7, kind).lowercase()
             if (minutes < 1.0) continue
 
             val start = Instant.ofEpochMilli(startMs)
@@ -98,16 +99,15 @@ class HealthConnectWriter(private val context: Context) {
             val so = zone.rules.getOffset(start)
             val eo = zone.rules.getOffset(end)
             val key = "runsense-$lid"
-            val exerciseType = when (kind.lowercase()) {
-                "run", "running" -> ExerciseSessionRecord.EXERCISE_TYPE_RUNNING
-                "walk", "walking" -> ExerciseSessionRecord.EXERCISE_TYPE_WALKING
-                "ride", "cycling", "bike" -> ExerciseSessionRecord.EXERCISE_TYPE_BIKING
-                "swim", "swimming" -> ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL
-                "hike", "hiking" -> ExerciseSessionRecord.EXERCISE_TYPE_HIKING
-                "rowing", "row" -> ExerciseSessionRecord.EXERCISE_TYPE_ROWING
-                "elliptical" -> ExerciseSessionRecord.EXERCISE_TYPE_ELLIPTICAL
-                "strength", "weight_training" -> ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING
-                "jump_rope", "jumprope", "rope_skipping" -> ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT
+            val exerciseType = when {
+                sourceType.contains("run") || kind == "run" -> ExerciseSessionRecord.EXERCISE_TYPE_RUNNING
+                sourceType.contains("walk") || kind == "walk" -> ExerciseSessionRecord.EXERCISE_TYPE_WALKING
+                sourceType.contains("hike") -> ExerciseSessionRecord.EXERCISE_TYPE_HIKING
+                sourceType.contains("cycl") || sourceType.contains("bike") || sourceType.contains("ride") -> ExerciseSessionRecord.EXERCISE_TYPE_BIKING
+                sourceType.contains("swim") -> ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL
+                sourceType.contains("row") -> ExerciseSessionRecord.EXERCISE_TYPE_ROWING
+                sourceType.contains("elliptical") -> ExerciseSessionRecord.EXERCISE_TYPE_ELLIPTICAL
+                sourceType.contains("strength") || sourceType.contains("weight") -> ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING
                 else -> ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT
             }
 
