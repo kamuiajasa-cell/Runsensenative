@@ -209,7 +209,7 @@ class NativeBridge(
             else -> "unavailable"
         }
         val granted = state == "available" &&
-            runCatching { hc.grantedPermissions().isNotEmpty() }.getOrDefault(false)
+            runCatching { hc.grantedPermissions().containsAll(HealthConnectWriter.PERMISSIONS) }.getOrDefault(false)
         return JSONObject().put("state", state).put("granted", granted)
     }
 
